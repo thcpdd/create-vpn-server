@@ -18,6 +18,7 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import convert
+from subscription_userinfo import get_subscription_userinfo
 
 TOKEN_FILE = "/root/clash-token.txt"
 VLESS_FILE = "/root/vless-link.txt"
@@ -54,6 +55,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Connection", "close")
+
+        # 设置订阅流量、订阅过期请求头
+        subscription_userinfo = get_subscription_userinfo()
+        if subscription_userinfo:
+            self.send_header("subscription-userinfo", subscription_userinfo)
+
         self.end_headers()
         self.wfile.write(content)
 
