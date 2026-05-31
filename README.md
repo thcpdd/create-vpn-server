@@ -72,7 +72,7 @@ vless://UUID@SERVER_IP:PORT?encryption=none&flow=xtls-rprx-vision&security=reali
 使用 VLESS 链接的 MD5 作为访问令牌，生成订阅地址：
 
 ```
-http://SERVER_IP:25500/<md5_token>
+http://SERVER_IP:25500/sub?token=<md5_token>
 ```
 
 服务器根据 token 匹配请求，动态调用 convert.py 返回 Clash YAML 配置。
@@ -103,3 +103,39 @@ http://SERVER_IP:25500/<md5_token>
 - **加密传输**: Reality (TLS 1.3 指纹伪装)
 - **订阅转换**: 自建 Python 服务器 (server.py + convert.py)
 - **客户端**: Clash Verge / Clash Meta / 任何支持 Clash 订阅的客户端
+
+## 流量信息响应头
+
+Clash 会识别订阅链接的响应头是中否包含`subscription-userinfo`。
+
+例如：
+
+```
+subscription-userinfo: upload=1234; download=2234; total=1024000; expire=2218532293
+```
+
+这个响应头可以在 Clash 中展示流量的使用情况以及订阅的到期时间。
+
+如果是自己用服务器搭建的 VPN，那每个人都有自己的流量信息获取方式。
+
+文件：`subscription_userinfo.py`
+
+```python
+def custom_hook() -> str:
+    """
+    自定义获取流量信息逻辑
+
+    最终需要返回："upload=1234; download=2234; total=1024000; expire=2218532293"
+    流量信息(单位: 字节)、到期信息(时间戳)
+    """
+
+    return ""
+```
+
+你需要编写这个函数的逻辑，最终返回完整的响应头。
+
+编写完以后重启后端服务：
+
+```bash
+sudo systemctl restart clash-sub-server.service
+```

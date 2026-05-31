@@ -26,6 +26,8 @@ CN2 分两种：
 | OneTechCloud | 三网回程 CN2 GIA，提供原生 IP | [onetechcloud.com](https://onetechcloud.com) |
 | AkkoCloud | 三网回程 + 电信去程 CN2 GIA | [akkocloud.com](https://akkocloud.com) |
 
+> 更多商家：[VPS推荐](https://vpsknow.com/vps-recommendations)
+
 ## 搬瓦工 (BandwagonHost)
 
 - 运营超十年，稳定性有保障
