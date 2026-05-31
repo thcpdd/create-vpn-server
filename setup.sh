@@ -221,6 +221,7 @@ cd $SERVER_DIR
 # 下载 server.py 和 convert.py
 wget -q https://raw.githubusercontent.com/thcpdd/self-vpn/main/server.py -O server.py
 wget -q https://raw.githubusercontent.com/thcpdd/self-vpn/main/convert.py -O convert.py
+wget -q https://raw.githubusercontent.com/thcpdd/self-vpn/main/subscription_userinfo.py -O subscription_userinfo.py
 
 if [ ! -f server.py ] || [ ! -f convert.py ]; then
     echo -e "${RED}文件下载失败${NC}"
