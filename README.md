@@ -17,17 +17,19 @@ bash <(curl -sL https://raw.githubusercontent.com/thcpdd/self-vpn/main/setup.sh)
 整个脚本分为 5 个步骤，在服务器上搭建了一套完整的代理 + 订阅转换链路：
 
 ```
-┌─────────────┐     VLESS-Reality     ┌──────────────────┐
-│  Clash 客户端 │ ◄──── 订阅拉取 ──── │  subconverter     │
-│  (你的电脑)   │                      │  (订阅转换服务)   │
-└─────────────┘                      └────────┬─────────┘
-                                              │
-                                     VLESS 链接 (原始格式)
-                                              │
-                                     ┌────────▼─────────┐
-                                     │  Xray (代理服务)   │
-                                     │  VLESS + Reality  │
-                                     └──────────────────┘
+┌─────────────┐     VLESS-Reality     ┌──────────────────────┐
+│  Clash 客户端 │ ◄──── 订阅拉取 ──── │  clash-sub-server    │
+│  (你的电脑)   │                      │  (Python, 端口25500)  │
+└─────────────┘                      └──────────┬───────────┘
+                                                │
+                                       convert.py 动态转换
+                                                │
+                                       VLESS 链接 (原始格式)
+                                                │
+                                       ┌────────▼─────────┐
+                                       │  Xray (代理服务)   │
+                                       │  VLESS + Reality  │
+                                       └──────────────────┘
 ```
 
 ### 脚本执行流程
@@ -49,13 +51,13 @@ bash <(curl -sL https://raw.githubusercontent.com/thcpdd/self-vpn/main/setup.sh)
 | `security: reality` | 使用 Reality 传输层加密 |
 | `dest: $SNI:443` | 伪装成访问目标网站的 TLS 握手 |
 
-#### 2. 安装 subconverter
+#### 2. 安装订阅服务器
 
-- 下载 [subconverter](https://github.com/asdlokj1qpi233/subconverter)（订阅格式转换工具，fork 版，兼容 Reality 协议转换）
-- 配置监听 `0.0.0.0:25500`
-- 注册为 systemd 服务并自启
+- 安装 Python3（如未安装）
+- 下载 `server.py` 和 `convert.py` 到 `/opt/clash-sub-server/`
+- 注册为 systemd 服务（`clash-sub-server`）并自启
 
-subconverter 的作用是将 VLESS 分享链接转换为 Clash 可识别的 YAML 订阅格式。
+自建的 Python 服务器将 VLESS 链接动态转换为 Clash YAML 订阅格式，替代第三方 subconverter。
 
 #### 3. 生成 VLESS 链接
 
@@ -67,25 +69,19 @@ vless://UUID@SERVER_IP:PORT?encryption=none&flow=xtls-rprx-vision&security=reali
 
 #### 4. 生成 Clash 订阅地址
 
-将 VLESS 链接通过 subconverter 转换为 Clash 订阅：
+使用 VLESS 链接的 MD5 作为访问令牌，生成订阅地址：
 
 ```
-http://SERVER_IP:25500/sub?target=clash&url=ENCODED_VLESS_LINK&filename=SUB_NAME
+http://SERVER_IP:25500/<md5_token>
 ```
+
+服务器根据 token 匹配请求，动态调用 convert.py 返回 Clash YAML 配置。
 
 #### 5. 测试验证
 
-- 测试 subconverter 接口是否正常响应
+- 测试订阅服务器接口是否正常响应
 - 检查 Xray 端口是否监听
 - 输出订阅地址和备用 VLESS 链接
-
-## 自定义配置
-
-编辑脚本顶部的变量：
-
-```bash
-SUB_NAME="My-VPN"   # Clash 订阅显示的名称
-```
 
 ## 输出文件
 
@@ -99,11 +95,11 @@ SUB_NAME="My-VPN"   # Clash 订阅显示的名称
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | `xray` | 随机端口 | 代理服务 |
-| `subconverter` | 25500 | 订阅转换服务 |
+| `clash-sub-server` | 25500 | 订阅转换服务 |
 
 ## 技术栈
 
 - **代理协议**: VLESS + Reality + XTLS Vision
 - **加密传输**: Reality (TLS 1.3 指纹伪装)
-- **订阅转换**: subconverter
+- **订阅转换**: 自建 Python 服务器 (server.py + convert.py)
 - **客户端**: Clash Verge / Clash Meta / 任何支持 Clash 订阅的客户端

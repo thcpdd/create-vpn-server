@@ -7,10 +7,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-# ============ 用户自定义配置 ============
-SUB_NAME="My-VPN"        # Clash 订阅显示的名称
-# =======================================
-
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}    VLESS-Reality + Clash 订阅一键脚本${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -207,67 +203,40 @@ else
 fi
 
 # ============================================
-# 第二步：安装 subconverter
+# 第二步：安装订阅服务器
 # ============================================
-echo -e "${BLUE}[2/5] 安装 subconverter...${NC}"
+echo -e "${BLUE}[2/5] 安装订阅服务器...${NC}"
 
-SUB_DIR="/opt/subconverter"
-rm -rf $SUB_DIR
-mkdir -p $SUB_DIR
-cd $SUB_DIR
+# 确保 Python3 已安装
+if ! command -v python3 &> /dev/null; then
+    echo -e "${YELLOW}正在安装 Python3...${NC}"
+    apt-get update -qq && apt-get install -y -qq python3 >/dev/null 2>&1
+fi
 
-# 下载 subconverter
-wget -q --show-progress https://github.com/asdlokj1qpi233/subconverter/releases/latest/download/subconverter_linux64.tar.gz
-if [ ! -f subconverter_linux64.tar.gz ]; then
-    echo -e "${RED}subconverter 下载失败${NC}"
-else
-    tar -xzf subconverter_linux64.tar.gz
-    
-    # 修正路径
-    if [ -d "subconverter" ]; then
-        cd subconverter
-    fi
-    
-    # 优先使用 TOML 配置（fork 版本主力格式）
-    if [ -f "pref.example.toml" ]; then
-        cp pref.example.toml pref.toml
-        sed -i 's/listen = "127.0.0.1"/listen = "0.0.0.0"/g' pref.toml
-        sed -i 's/port = 8080/port = 25500/g' pref.toml
-    fi
+SERVER_DIR="/opt/clash-sub-server"
+rm -rf $SERVER_DIR
+mkdir -p $SERVER_DIR
+cd $SERVER_DIR
 
-    # INI 配置作为备用
-    if [ -f "pref.ini" ]; then
-        sed -i 's/127.0.0.1/0.0.0.0/g' pref.ini
-        sed -i 's/8080/25500/g' pref.ini
-    elif [ -f "config.ini" ]; then
-        sed -i 's/127.0.0.1/0.0.0.0/g' config.ini
-        sed -i 's/8080/25500/g' config.ini
-    else
-        cat > pref.ini << EOF
-[common]
-api_mode=true
-default_url=
-exclude_remarks=(到期|流量|时间|官网|网站)
-auto_update=false
-managed_config_prefix=
+# 下载 server.py 和 convert.py
+wget -q https://raw.githubusercontent.com/thcpdd/self-vpn/main/server.py -O server.py
+wget -q https://raw.githubusercontent.com/thcpdd/self-vpn/main/convert.py -O convert.py
 
-[server]
-listen=0.0.0.0
-port=25500
-EOF
-    fi
-    
-    # 创建 systemd 服务
-    WORK_DIR=$(pwd)
-    cat > /etc/systemd/system/subconverter.service << EOF
+if [ ! -f server.py ] || [ ! -f convert.py ]; then
+    echo -e "${RED}文件下载失败${NC}"
+    exit 1
+fi
+
+# 创建 systemd 服务
+cat > /etc/systemd/system/clash-sub-server.service << EOF
 [Unit]
-Description=Subconverter Service
+Description=Clash Subscription Server
 After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=$WORK_DIR
-ExecStart=$WORK_DIR/subconverter
+WorkingDirectory=$SERVER_DIR
+ExecStart=/usr/bin/python3 $SERVER_DIR/server.py
 Restart=always
 RestartSec=3
 User=root
@@ -275,33 +244,23 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
-    
-    systemctl daemon-reload
-    systemctl enable subconverter
-    systemctl restart subconverter
-    
-    sleep 2
-    if systemctl is-active --quiet subconverter; then
-        echo -e "${GREEN}✓ subconverter 启动成功${NC}"
-    else
-        echo -e "${YELLOW}⚠ subconverter 启动失败，尝试手动启动...${NC}"
-        cd $WORK_DIR && nohup ./subconverter > /dev/null 2>&1 &
-    fi
+
+systemctl daemon-reload
+systemctl enable clash-sub-server
+systemctl restart clash-sub-server
+
+sleep 2
+if systemctl is-active --quiet clash-sub-server; then
+    echo -e "${GREEN}✓ 订阅服务器启动成功${NC}"
+else
+    echo -e "${RED}✗ 订阅服务器启动失败，查看日志: journalctl -u clash-sub-server -n 20${NC}"
+    exit 1
 fi
 
 # ============================================
 # 第三步：生成 VLESS 链接
 # ============================================
 echo -e "${BLUE}[3/5] 生成 VLESS-Reality 链接...${NC}"
-
-# URL 编码函数
-url_encode() {
-    if command -v python3 &> /dev/null; then
-        python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$1"
-    else
-        echo "$1" | sed 's/#/%23/g; s/@/%40/g; s/:/%3A/g'
-    fi
-}
 
 VLESS_LINK="vless://$UUID@$SERVER_IP:$RANDOM_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#VLESS-Reality"
 
@@ -313,8 +272,16 @@ echo "$VLESS_LINK" > /root/vless-link.txt
 # ============================================
 echo -e "${BLUE}[4/5] 生成 Clash 订阅链接...${NC}"
 
-ENCODED_LINK=$(url_encode "$VLESS_LINK")
-SUB_URL="http://$SERVER_IP:25500/sub?target=clash&url=$ENCODED_LINK&filename=$SUB_NAME"
+# 用 VLESS 链接的 MD5 作为访问 token
+CLASH_TOKEN=$(echo -n "$VLESS_LINK" | md5sum | awk '{print $1}')
+echo "$CLASH_TOKEN" > /root/clash-token.txt
+chmod 600 /root/clash-token.txt /root/vless-link.txt
+
+# 重启服务器使其加载新 token
+systemctl restart clash-sub-server
+sleep 1
+
+SUB_URL="http://$SERVER_IP:25500/sub?token=$CLASH_TOKEN"
 echo "$SUB_URL" > /root/clash-subscription.txt
 
 echo -e "${GREEN}✓ Clash 订阅链接已生成${NC}"
@@ -326,9 +293,9 @@ echo -e "${BLUE}[5/5] 测试连接...${NC}"
 
 sleep 3
 if curl -s "http://localhost:25500/version" > /dev/null 2>&1; then
-    echo -e "${GREEN}✓ subconverter 工作正常${NC}"
+    echo -e "${GREEN}✓ 订阅服务器工作正常${NC}"
 else
-    echo -e "${YELLOW}⚠ subconverter 可能需要几秒启动，稍后可测试${NC}"
+    echo -e "${YELLOW}⚠ 订阅服务器可能需要几秒启动，稍后可测试${NC}"
 fi
 
 # 测试 Xray 端口
@@ -359,6 +326,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${YELLOW}文件保存位置:${NC}"
 echo -e "  VLESS 链接: /root/vless-link.txt"
 echo -e "  订阅地址: /root/clash-subscription.txt"
+echo -e "  订阅服务器: /opt/clash-sub-server/"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "${GREEN}✨ 脚本执行完毕！${NC}"
