@@ -71,8 +71,8 @@ echo -e "${GREEN}找到 Xray: $XRAY_CMD${NC}"
 # 使用 xray 生成密钥对
 KEY_PAIR=$($XRAY_CMD x25519)
 if [ -n "$KEY_PAIR" ]; then
-    PRIVATE_KEY=$(echo "$KEY_PAIR" | grep "Private key:" | awk '{print $3}')
-    PUBLIC_KEY=$(echo "$KEY_PAIR" | grep "Public key:" | awk '{print $3}')
+    PRIVATE_KEY=$(echo "$KEY_PAIR" | grep -i "private" | sed 's/.*: //')
+    PUBLIC_KEY=$(echo "$KEY_PAIR" | grep -i "public" | sed 's/.*: //' | tr -d ')')
 fi
 
 # 验证密钥是否生成成功
