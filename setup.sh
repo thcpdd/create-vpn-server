@@ -277,10 +277,6 @@ CLASH_TOKEN=$(echo -n "$VLESS_LINK" | md5sum | awk '{print $1}')
 echo "$CLASH_TOKEN" > /root/clash-token.txt
 chmod 600 /root/clash-token.txt /root/vless-link.txt
 
-# 重启服务器使其加载新 token
-systemctl restart clash-sub-server
-sleep 1
-
 SUB_URL="http://$SERVER_IP:25500/sub?token=$CLASH_TOKEN"
 echo "$SUB_URL" > /root/clash-subscription.txt
 
