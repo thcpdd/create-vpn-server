@@ -46,17 +46,15 @@ def load_vless_text():
 class RequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
-        """自定义日志格式，便于排查问题"""
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), format % args))
 
     def _send_response(self, code, content, content_type="text/plain; charset=utf-8"):
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Connection", "close")
-        self.end_headers()
         if isinstance(content, str):
             content = content.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Connection", "close")
+        self.end_headers()
         self.wfile.write(content)
 
     def do_GET(self):
@@ -65,12 +63,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         params = parse_qs(parsed.query)
         token = load_token()
 
-        # /version — 状态检查
         if path == "/version":
             self._send_response(200, '{"status":"ok"}', "application/json")
             return
 
-        # /sub?token=xxx — 返回 Clash 配置
         if path == "/sub":
             req_token = params.get("token", [""])[0]
 
@@ -95,7 +91,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._send_response(500, "配置生成失败: %s" % e)
             return
 
-        # 其他路径
         self._send_response(404, "Not Found")
 
 
@@ -104,7 +99,7 @@ def main():
     print("Clash 订阅服务器已启动: http://%s:%s" % (LISTEN_HOST, LISTEN_PORT), file=sys.stderr)
     token = load_token()
     if token:
-        print("订阅端点: /%s" % token, file=sys.stderr)
+        print("订阅端点: /sub?token=%s" % token, file=sys.stderr)
     print("状态检查: /version", file=sys.stderr)
     try:
         server.serve_forever()

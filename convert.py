@@ -50,7 +50,7 @@ rules:
   - GEOSITE,category-ads-all,REJECT
   - GEOSITE,cn,DIRECT
   - GEOIP,CN,DIRECT
-  - MATCH,{group_name}
+  - MATCH,{group_name_raw}
 """
 
 DEFAULT_GROUP_NAME = "🚀 代理"
@@ -174,6 +174,7 @@ def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME) -> str:
     config = CONFIG_TEMPLATE.format(
         proxies=proxy_lines,
         group_name=quoted_name,
+        group_name_raw=group_name,
         group_proxies=group_lines,
     )
     return config
