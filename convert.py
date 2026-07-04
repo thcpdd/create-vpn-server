@@ -48,6 +48,7 @@ rules:
   - IP-CIDR6,fe80::/10,DIRECT,no-resolve
   - IP-CIDR6,fd00::/8,DIRECT,no-resolve
   - GEOSITE,category-ads-all,REJECT
+  - GEOSITE,google,{group_name_raw}
   - GEOSITE,cn,DIRECT
   - GEOIP,CN,DIRECT
   - MATCH,{group_name_raw}
