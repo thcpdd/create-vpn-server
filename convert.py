@@ -126,6 +126,8 @@ def node_to_clash_proxy(node: dict) -> str:
         f'    port: {node["port"]}',
         f'    uuid: {node["uuid"]}',
         f'    network: {node["network"]}',
+        '    udp: true',
+        '    packet-encoding: xudp',
     ]
 
     if node["security"] == "reality":
