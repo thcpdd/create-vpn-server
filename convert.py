@@ -21,12 +21,41 @@ from urllib.parse import parse_qs, urlparse
 # ──────────────────────────────────────
 # Clash 配置文件模板
 # ──────────────────────────────────────
-CONFIG_TEMPLATE = """port: 7890
-socks-port: 7891
-allow-lan: true
-mode: Rule
+CONFIG_TEMPLATE = """mode: rule
 log-level: info
-external-controller: 127.0.0.1:9090
+
+dns:
+  enable: true
+  ipv6: false
+  listen: 127.0.0.1:1053
+  enhanced-mode: fake-ip
+  fake-ip-range: 198.18.0.1/16
+  respect-rules: true
+  fake-ip-filter:
+    - '*.lan'
+    - '*.local'
+    - '*.localdomain'
+    - localhost.ptlogin2.qq.com
+    - dns.msftncsi.com
+    - www.msftncsi.com
+    - www.msftconnecttest.com
+  default-nameserver:
+    - tls://223.5.5.5
+  proxy-server-nameserver:
+    - tls://223.5.5.5
+  nameserver:
+    - 'https://1.1.1.1/dns-query#{group_name_raw}'
+    - 'https://8.8.8.8/dns-query#{group_name_raw}'
+  nameserver-policy:
+    'geosite:cn':
+      - 'https://dns.alidns.com/dns-query#DIRECT'
+      - 'https://doh.pub/dns-query#DIRECT'
+  fallback: []
+  fallback-filter: {{}}
+
+dns-hijack:
+  - any:53
+  - tcp://any:53
 
 proxies:
 {proxies}
