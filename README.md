@@ -1,124 +1,136 @@
-# VLESS-Reality + Clash 订阅一键部署脚本
+# VLESS-Reality + Clash Subscription One-Click Setup
 
-在 Linux 服务器上一键部署 VLESS-Reality 代理，并自动生成 Clash 订阅链接。
+**English** | [简体中文](README.zh-CN.md)
 
-## 快速使用
+Deploy a VLESS-Reality proxy on a Linux server with a single command, and get a ready-to-use Clash subscription URL.
 
-在 root 权限下直接运行以下命令即可：
+## Features
+
+- **One command**: installs Xray, generates keys, writes config, and starts all services
+- **VLESS + Reality + XTLS Vision**: TLS 1.3 fingerprint camouflage, no domain or certificate needed
+- **Built-in subscription server**: a zero-dependency Python service converts the VLESS link into Clash YAML, no third-party subconverter
+- **Traffic info header**: optional `subscription-userinfo` support so Clash can show usage and expiry
+
+## Requirements
+
+- A Linux server with systemd (Debian / Ubuntu recommended)
+- Root privileges
+- Inbound access to the random proxy port and port `25500`
+
+> Choosing a VPS? See the [overseas VPS provider guide](海外VPS云厂商选择.md) (Chinese only).
+
+## Quick Start
+
+Run as root:
 
 ```bash
 bash <(curl -sL https://raw.githubusercontent.com/thcpdd/create-vpn-server/main/setup.sh)
 ```
 
-> 注意：需以 root 身份运行，脚本会自动完成所有配置。
+When it finishes, copy the printed Clash subscription URL into your client:
 
-## 脚本原理
+1. Open Clash Verge / Clash Meta
+2. Profiles → Import / New → paste the URL → Update
 
-整个脚本分为 5 个步骤，在服务器上搭建了一套完整的代理 + 订阅转换链路：
+## How It Works
 
 ```
-┌─────────────┐     VLESS-Reality     ┌──────────────────────┐
-│  Clash 客户端 │ ◄──── 订阅拉取 ──── │  clash-sub-server    │
-│  (你的电脑)   │                      │  (Python, 端口25500)  │
-└─────────────┘                      └──────────┬───────────┘
-                                                │
-                                       convert.py 动态转换
-                                                │
-                                       VLESS 链接 (原始格式)
-                                                │
-                                       ┌────────▼─────────┐
-                                       │  Xray (代理服务)   │
-                                       │  VLESS + Reality  │
-                                       └──────────────────┘
+┌──────────────┐   subscription   ┌──────────────────────┐
+│ Clash client │ ◄─────────────── │  clash-sub-server    │
+│ (your device)│                  │  (Python, port 25500)│
+└──────┬───────┘                  └──────────┬───────────┘
+       │                                     │ convert.py
+       │                                     │ VLESS link → Clash YAML
+       │       VLESS-Reality       ┌─────────┴──────────┐
+       └─────────────────────────► │   Xray (proxy)     │
+                                   │   VLESS + Reality  │
+                                   └────────────────────┘
 ```
 
-### 脚本执行流程
+The script runs in 5 steps:
 
-#### 1. 安装 Xray 并配置 VLESS-Reality
+### 1. Install Xray and configure VLESS-Reality
 
-- 安装 [Xray-core](https://github.com/XTLS/Xray-core)（若尚未安装）
-- 生成随机端口（10000-50000）、UUID、X25519 密钥对、Short ID
-- 从预设列表随机选取一个伪装域名（如 `www.microsoft.com`）
-- 写入 Xray 配置文件 `/usr/local/etc/xray/config.json`
-- 验证配置并启动 Xray 服务
+- Install [Xray-core](https://github.com/XTLS/Xray-core) if not already present
+- Generate a random port (10000–49999), UUID, X25519 key pair and Short ID
+- Pick a camouflage domain at random from a preset list (e.g. `www.microsoft.com`)
+- Write `/usr/local/etc/xray/config.json`, validate it and start Xray
+- Open the ports via `ufw` or `firewalld` if either is detected
 
-关键配置项：
+| Setting | Description |
+|---------|-------------|
+| `protocol: vless` | VLESS protocol |
+| `flow: xtls-rprx-vision` | XTLS Vision flow control |
+| `security: reality` | Reality transport security |
+| `dest: $SNI:443` | TLS handshake disguised as the target website |
 
-| 配置 | 说明 |
-|------|------|
-| `protocol: vless` | 使用 VLESS 协议 |
-| `flow: xtls-rprx-vision` | 启用 XTLS Vision 流控 |
-| `security: reality` | 使用 Reality 传输层加密 |
-| `dest: $SNI:443` | 伪装成访问目标网站的 TLS 握手 |
+### 2. Install the subscription server
 
-#### 2. 安装订阅服务器
+- Install Python 3 if missing
+- Download `server.py`, `convert.py` and `subscription_userinfo.py` to `/opt/clash-sub-server/`
+- Register and enable the `clash-sub-server` systemd service
 
-- 安装 Python3（如未安装）
-- 下载 `server.py`、`convert.py` 和 `subscription_userinfo.py` 到 `/opt/clash-sub-server/`
-- 注册为 systemd 服务（`clash-sub-server`）并自启
-
-自建的 Python 服务器将 VLESS 链接动态转换为 Clash YAML 订阅格式，替代第三方 subconverter。
-
-#### 3. 生成 VLESS 链接
-
-拼接标准 VLESS-Reality 分享链接格式：
+### 3. Generate the VLESS link
 
 ```
 vless://UUID@SERVER_IP:PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=SNI&fp=chrome&pbk=PUBLIC_KEY&sid=SHORT_ID&type=tcp#VLESS-Reality
 ```
 
-#### 4. 生成 Clash 订阅地址
+### 4. Generate the Clash subscription URL
 
-使用 VLESS 链接的 MD5 作为访问令牌，生成订阅地址：
+The MD5 of the VLESS link is used as the access token:
 
 ```
 http://SERVER_IP:25500/sub?token=<md5_token>
 ```
 
-服务器根据 token 匹配请求，动态调用 convert.py 返回 Clash YAML 配置。
+On each request the server checks the token and calls `convert.py` to build the Clash YAML on the fly.
 
-#### 5. 测试验证
+### 5. Verify
 
-- 测试订阅服务器接口是否正常响应
-- 检查 Xray 端口是否监听
-- 输出订阅地址和备用 VLESS 链接
+- Check that the subscription server responds
+- Check that Xray is listening on its port
+- Print the subscription URL and the backup VLESS link
 
-## 输出文件
+## Server Layout
 
-| 文件 | 内容 |
-|------|------|
-| `/root/vless-link.txt` | VLESS 分享链接（备用） |
-| `/root/clash-subscription.txt` | Clash 订阅地址 |
+### Files
 
-## 系统服务
+| Path | Content |
+|------|---------|
+| `/root/vless-link.txt` | VLESS share link (backup) |
+| `/root/clash-subscription.txt` | Clash subscription URL |
+| `/root/clash-token.txt` | Subscription access token |
+| `/usr/local/etc/xray/config.json` | Xray config |
+| `/opt/clash-sub-server/` | Subscription server scripts |
 
-| 服务 | 端口 | 说明 |
-|------|------|------|
-| `xray` | 随机端口 | 代理服务 |
-| `clash-sub-server` | 25500 | 订阅转换服务 |
+### Services
 
-## 技术栈
+| Service | Port | Description |
+|---------|------|-------------|
+| `xray` | random | Proxy service |
+| `clash-sub-server` | 25500 | Subscription service |
 
-- **代理协议**: VLESS + Reality + XTLS Vision
-- **加密传输**: Reality (TLS 1.3 指纹伪装)
-- **订阅转换**: 自建 Python 服务器 (server.py + convert.py)
-- **客户端**: Clash Verge / Clash Meta / 任何支持 Clash 订阅的客户端
+### Subscription endpoints
 
-## 流量信息响应头
+| Endpoint | Description |
+|----------|-------------|
+| `GET /sub?token=<token>` | Returns the Clash YAML config |
+| `GET /version` | Health check |
 
-Clash 会识别订阅链接的响应头是中否包含`subscription-userinfo`。
+## Traffic Info Header
 
-例如：
+Clash reads the `subscription-userinfo` response header of a subscription URL, for example:
 
 ```
 subscription-userinfo: upload=1234; download=2234; total=1024000; expire=2218532293
 ```
 
-这个响应头可以在 Clash 中展示流量的使用情况以及订阅的到期时间。
+With it, Clash can show traffic usage and the subscription expiry date. Traffic is in bytes, expiry is a Unix timestamp.
 
-如果是自己用服务器搭建的 VPN，那每个人都有自己的流量信息获取方式。
+Every self-hosted server tracks traffic differently, so you need to provide this value yourself. There are two ways:
 
-文件：`/opt/clash-sub-server/subscription_userinfo.py`
+**Option 1: write a custom hook** in `/opt/clash-sub-server/subscription_userinfo.py`:
 
 ```python
 def custom_hook() -> str:
@@ -132,10 +144,25 @@ def custom_hook() -> str:
     return ""
 ```
 
-你需要编写这个函数的逻辑，最终返回完整的响应头。
+Return the full header value from this function.
 
-编写完以后重启后端服务：
+**Option 2: provide an executable** named `subinfo` in `/opt/clash-sub-server/`. If `custom_hook()` returns an empty string, the server runs `./subinfo` and uses its output as the header value.
+
+Restart the service after making changes:
 
 ```bash
 sudo systemctl restart clash-sub-server.service
 ```
+
+## Troubleshooting
+
+- **Client cannot connect**: besides the server firewall, make sure your cloud provider's security group allows the proxy port and `25500`
+- **Subscription server logs**: `journalctl -u clash-sub-server -n 50`
+- **Xray logs**: `journalctl -u xray -n 50`
+
+## Tech Stack
+
+- **Proxy protocol**: VLESS + Reality + XTLS Vision
+- **Transport security**: Reality (TLS 1.3 fingerprint camouflage)
+- **Subscription conversion**: self-hosted Python server (standard library only)
+- **Clients**: Clash Verge / Clash Meta / any client supporting Clash subscriptions
