@@ -7,7 +7,7 @@
 在 root 权限下直接运行以下命令即可：
 
 ```bash
-bash <(curl -sL https://raw.githubusercontent.com/thcpdd/self-vpn/main/setup.sh)
+bash <(curl -sL https://raw.githubusercontent.com/thcpdd/create-vpn-server/main/setup.sh)
 ```
 
 > 注意：需以 root 身份运行，脚本会自动完成所有配置。
@@ -54,7 +54,7 @@ bash <(curl -sL https://raw.githubusercontent.com/thcpdd/self-vpn/main/setup.sh)
 #### 2. 安装订阅服务器
 
 - 安装 Python3（如未安装）
-- 下载 `server.py` 和 `convert.py` 到 `/opt/clash-sub-server/`
+- 下载 `server.py`、`convert.py` 和 `subscription_userinfo.py` 到 `/opt/clash-sub-server/`
 - 注册为 systemd 服务（`clash-sub-server`）并自启
 
 自建的 Python 服务器将 VLESS 链接动态转换为 Clash YAML 订阅格式，替代第三方 subconverter。
@@ -118,7 +118,7 @@ subscription-userinfo: upload=1234; download=2234; total=1024000; expire=2218532
 
 如果是自己用服务器搭建的 VPN，那每个人都有自己的流量信息获取方式。
 
-文件：`subscription_userinfo.py`
+文件：`/opt/clash-sub-server/subscription_userinfo.py`
 
 ```python
 def custom_hook() -> str:
