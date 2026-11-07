@@ -116,6 +116,7 @@ On each request the server checks the token and calls `convert.py` to build the 
 | Endpoint | Description |
 |----------|-------------|
 | `GET /sub?token=<token>` | Returns the Clash YAML config |
+| `GET /sub?token=<token>&node_ip=<ip>&node_port=<port>` | Same as above, but the proxy `server` / `port` are set to `<ip>` (IPv4/IPv6) / `<port>`. Use it when clients connect through a relay server that forwards to this server. Both parameters are optional and can be used separately |
 | `GET /version` | Health check |
 
 ## Traffic Info Header

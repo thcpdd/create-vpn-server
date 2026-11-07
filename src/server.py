@@ -11,6 +11,7 @@ Clash 订阅服务器
 
 import sys
 import os
+import ipaddress
 import re
 import shutil
 import subprocess
@@ -91,6 +92,26 @@ def xray_supports_mlkem():
     return version is not None and version >= MLKEM_MIN_XRAY_VERSION
 
 
+def parse_node_ip(value):
+    """校验 node_ip 参数，返回规范化的 IP 字符串；不是合法 IPv4/IPv6 地址时返回 None"""
+    value = value.strip()
+    if value.startswith("[") and value.endswith("]"):
+        value = value[1:-1]
+    try:
+        return str(ipaddress.ip_address(value))
+    except ValueError:
+        return None
+
+
+def parse_node_port(value):
+    """校验 node_port 参数，返回 1-65535 的整数；无效时返回 None"""
+    value = value.strip()
+    if not value.isdigit():
+        return None
+    port = int(value)
+    return port if 1 <= port <= 65535 else None
+
+
 class RequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
@@ -134,6 +155,22 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._send_response(403, "token 无效")
                 return
 
+            node_ip = None
+            raw_node_ip = params.get("node_ip", [""])[0]
+            if raw_node_ip:
+                node_ip = parse_node_ip(raw_node_ip)
+                if not node_ip:
+                    self._send_response(400, "node_ip 不是有效的 IP 地址")
+                    return
+
+            node_port = None
+            raw_node_port = params.get("node_port", [""])[0]
+            if raw_node_port:
+                node_port = parse_node_port(raw_node_port)
+                if not node_port:
+                    self._send_response(400, "node_port 不是有效的端口（1-65535）")
+                    return
+
             vless_text = load_vless_text()
             if not vless_text:
                 self._send_response(500, "VLESS 链接文件不存在，请先运行 setup.sh")
@@ -141,7 +178,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             try:
                 sub_name = load_sub_name()
-                config = convert.build_clash_config(vless_text, sub_name, xray_supports_mlkem())
+                config = convert.build_clash_config(vless_text, sub_name, xray_supports_mlkem(), node_ip, node_port)
                 # Clash 客户端从 Content-Disposition 读取订阅名称（缺失时会用 URL 路径 "sub"）
                 # 使用 RFC 5987 编码以支持中文
                 headers = {

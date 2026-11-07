@@ -116,6 +116,7 @@ http://SERVER_IP:SUB_PORT/sub?token=<md5_token>
 | 接口 | 说明 |
 |------|------|
 | `GET /sub?token=<token>` | 返回 Clash YAML 配置 |
+| `GET /sub?token=<token>&node_ip=<ip>&node_port=<port>` | 同上，但代理节点的 `server` / `port` 改为 `<ip>`（支持 IPv4/IPv6）/ `<port>`，适用于客户端经中转服务器转发到本机的场景。两个参数均可选，可单独使用 |
 | `GET /version` | 健康检查 |
 
 ## 流量信息响应头

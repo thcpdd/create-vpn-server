@@ -126,7 +126,7 @@ def node_to_clash_proxy(node: dict, support_mlkem: bool = False) -> str:
     lines = [
         f'  - name: "{node["name"]}"',
         f'    type: vless',
-        f'    server: {node["server"]}',
+        f'    server: "{node["server"]}"',
         f'    port: {node["port"]}',
         f'    uuid: {node["uuid"]}',
         f'    network: {node["network"]}',
@@ -218,12 +218,15 @@ def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME, support_m
     return config
 
 
-def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bool = False) -> str:
+def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bool = False,
+                       server_override: str = None, port_override: int = None) -> str:
     """一站式转换：从 VLESS 文本直接生成 Clash YAML 配置
 
     vless_text: 包含 VLESS 链接的原始文本（可含多条）
     sub_name:   订阅名称，用于 proxy-groups 显示
     support_mlkem: 是否在 reality-opts 中开启 support-x25519mlkem768
+    server_override: 替换所有节点的 server 地址（客户端经中转服务器连接时使用）
+    port_override:   替换所有节点的端口（中转服务器监听端口与本机不同时使用）
     """
     links = extract_vless_links(vless_text)
     if not links:
@@ -231,7 +234,12 @@ def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bo
 
     nodes = []
     for link in links:
-        nodes.append(parse_vless_url(link))
+        node = parse_vless_url(link)
+        if server_override:
+            node["server"] = server_override
+        if port_override:
+            node["port"] = port_override
+        nodes.append(node)
 
     group_name = sub_name
     return generate_config(nodes, group_name, support_mlkem)
