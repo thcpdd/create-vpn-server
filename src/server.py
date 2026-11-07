@@ -14,7 +14,7 @@ import os
 import re
 import shutil
 import subprocess
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
 # 确保当前目录在 path 中，以便 import convert 模块
@@ -158,7 +158,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 def main():
     port = load_port()
-    server = HTTPServer((LISTEN_HOST, port), RequestHandler)
+    server = ThreadingHTTPServer((LISTEN_HOST, port), RequestHandler)
     print("Clash 订阅服务器已启动: http://%s:%s" % (LISTEN_HOST, port), file=sys.stderr)
     token = load_token()
     if token:
