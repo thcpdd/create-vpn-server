@@ -25,6 +25,15 @@ fi
 
 echo -e "${GREEN}服务器 IP: $SERVER_IP${NC}"
 
+# 输入订阅名称（显示在 Clash 客户端的订阅列表和代理组中）
+SUB_NAME=""
+if [ -t 0 ] || [ -r /dev/tty ]; then
+    read -r -p "请输入订阅名称 (直接回车默认 VPN): " SUB_NAME < /dev/tty
+fi
+SUB_NAME=$(echo "$SUB_NAME" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+SUB_NAME=${SUB_NAME:-VPN}
+echo -e "${GREEN}订阅名称: $SUB_NAME${NC}"
+
 # ============================================
 # 第一步：安装 Xray + VLESS-Reality
 # ============================================
@@ -275,7 +284,8 @@ echo -e "${BLUE}[4/5] 生成 Clash 订阅链接...${NC}"
 # 用 VLESS 链接的 MD5 作为访问 token
 CLASH_TOKEN=$(echo -n "$VLESS_LINK" | md5sum | awk '{print $1}')
 echo "$CLASH_TOKEN" > /root/clash-token.txt
-chmod 600 /root/clash-token.txt /root/vless-link.txt
+printf '%s\n' "$SUB_NAME" > /root/clash-sub-name.txt
+chmod 600 /root/clash-token.txt /root/vless-link.txt /root/clash-sub-name.txt
 
 SUB_URL="http://$SERVER_IP:25500/sub?token=$CLASH_TOKEN"
 echo "$SUB_URL" > /root/clash-subscription.txt
@@ -322,6 +332,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${YELLOW}文件保存位置:${NC}"
 echo -e "  VLESS 链接: /root/vless-link.txt"
 echo -e "  订阅地址: /root/clash-subscription.txt"
+echo -e "  订阅名称: /root/clash-sub-name.txt"
 echo -e "  订阅服务器: /opt/clash-sub-server/"
 echo -e "${BLUE}========================================${NC}"
 echo ""

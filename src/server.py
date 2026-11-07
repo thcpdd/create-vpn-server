@@ -12,7 +12,7 @@ Clash 订阅服务器
 import sys
 import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, quote
 
 # 确保当前目录在 path 中，以便 import convert 模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,6 +22,8 @@ from subscription_userinfo import get_subscription_userinfo
 
 TOKEN_FILE = "/root/clash-token.txt"
 VLESS_FILE = "/root/vless-link.txt"
+SUB_NAME_FILE = "/root/clash-sub-name.txt"
+DEFAULT_SUB_NAME = "VPN"
 LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = 25500
 
@@ -44,17 +46,29 @@ def load_vless_text():
         return None
 
 
+def load_sub_name():
+    """读取订阅名称，未设置时使用默认值"""
+    try:
+        with open(SUB_NAME_FILE, "r", encoding="utf-8") as f:
+            name = f.read().strip()
+            return name or DEFAULT_SUB_NAME
+    except FileNotFoundError:
+        return DEFAULT_SUB_NAME
+
+
 class RequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format, *args):
         sys.stderr.write("[%s] %s\n" % (self.log_date_time_string(), format % args))
 
-    def _send_response(self, code, content, content_type="text/plain; charset=utf-8"):
+    def _send_response(self, code, content, content_type="text/plain; charset=utf-8", extra_headers=None):
         if isinstance(content, str):
             content = content.encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Connection", "close")
+        for key, value in (extra_headers or {}).items():
+            self.send_header(key, value)
 
         # 设置订阅流量、订阅过期请求头
         subscription_userinfo = get_subscription_userinfo()
@@ -91,8 +105,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                 return
 
             try:
-                config = convert.build_clash_config(vless_text)
-                self._send_response(200, config, "text/yaml; charset=utf-8")
+                sub_name = load_sub_name()
+                config = convert.build_clash_config(vless_text, sub_name)
+                # Clash 客户端从 Content-Disposition 读取订阅名称（缺失时会用 URL 路径 "sub"）
+                # 使用 RFC 5987 编码以支持中文
+                headers = {
+                    "Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(sub_name, safe=""),
+                }
+                self._send_response(200, config, "text/yaml; charset=utf-8", headers)
             except Exception as e:
                 sys.stderr.write("生成配置失败: %s\n" % e)
                 self._send_response(500, "配置生成失败: %s" % e)
