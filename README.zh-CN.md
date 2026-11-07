@@ -67,7 +67,7 @@ bash <(curl -sL https://raw.githubusercontent.com/thcpdd/create-vpn-server/main/
 ### 2. 安装订阅服务器
 
 - 安装 Python3（如未安装）
-- 下载 `server.py`、`convert.py` 和 `subscription_userinfo.py` 到 `/opt/clash-sub-server/`
+- 下载 `server.py` 和 `convert.py` 到 `/opt/clash-sub-server/`
 - 注册为 systemd 服务（`clash-sub-server`）并设置开机自启
 
 ### 3. 生成 VLESS 链接
@@ -101,6 +101,7 @@ http://SERVER_IP:SUB_PORT/sub?token=<md5_token>
 | `/root/vless-link.txt` | VLESS 分享链接（备用） |
 | `/root/clash-subscription.txt` | Clash 订阅地址 |
 | `/root/clash-token.txt` | 订阅访问令牌 |
+| `/root/clash-sub-userinfo.txt` | 流量信息响应头内容（可选，需自行写入） |
 | `/usr/local/etc/xray/config.json` | Xray 配置文件 |
 | `/opt/clash-sub-server/` | 订阅服务器脚本 |
 
@@ -129,30 +130,28 @@ subscription-userinfo: upload=1234; download=2234; total=1024000; expire=2218532
 
 有了它，Clash 就能展示流量使用情况和订阅到期时间。流量单位为字节，到期时间为 Unix 时间戳。
 
-自建服务器的流量统计方式因人而异，需要你自行提供这个值，有两种方式：
-
-**方式一：编写自定义函数**，文件：`/opt/clash-sub-server/subscription_userinfo.py`
-
-```python
-def custom_hook() -> str:
-    """
-    自定义获取流量信息逻辑
-
-    最终需要返回："upload=1234; download=2234; total=1024000; expire=2218532293"
-    流量信息(单位: 字节)、到期信息(时间戳)
-    """
-
-    return ""
-```
-
-在这个函数中编写获取逻辑，返回完整的响应头内容。
-
-**方式二：提供可执行文件**，在 `/opt/clash-sub-server/` 下放置名为 `subinfo` 的可执行文件。当 `custom_hook()` 返回空字符串时，服务器会执行 `./subinfo`，并将其输出作为响应头内容。
-
-修改完成后重启服务：
+自建服务器的流量统计方式因人而异，需要你自行提供这个值：用任意脚本（cron 定时任务、vnstat、云厂商 API 等）把**完整的响应头值**写入 `/root/clash-sub-userinfo.txt`，订阅服务器会在返回订阅时原样带上它。
 
 ```bash
-sudo systemctl restart clash-sub-server.service
+echo "upload=1234; download=2234; total=1024000; expire=2218532293" > /root/clash-sub-userinfo.txt
+```
+
+- 文件不存在或为空时不发送该响应头；只读取第一个非空行
+- 每次请求都会重新读取文件，修改后立即生效，无需重启服务
+- 该文件位于 `/root` 下，重新运行 `setup.sh` 不会被覆盖
+- Clash 客户端只在更新订阅时读取该响应头，所以写入脚本定时更新即可（如每 5 分钟），无需实时计算
+
+为兼容尽可能多的客户端（Clash Verge 的解析较严格），请按以下格式输出：
+
+- 键使用小写的 `upload`、`download`、`total`、`expire`，用 `; ` 分隔，`=` 两边不要有空格
+- 值只能是非负整数：流量单位为字节，到期时间为秒级 Unix 时间戳，不要带小数或单位
+- 不需要的字段可以省略，例如不想显示到期时间就不写 `expire`
+
+建议先写临时文件再 `mv` 覆盖，避免读取到写了一半的内容：
+
+```bash
+echo "upload=0; download=38225207705; total=214748364800" > /root/clash-sub-userinfo.txt.tmp
+mv /root/clash-sub-userinfo.txt.tmp /root/clash-sub-userinfo.txt
 ```
 
 ## 常见问题

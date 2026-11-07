@@ -22,11 +22,12 @@ from urllib.parse import urlparse, parse_qs, quote
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import convert
-from subscription_userinfo import get_subscription_userinfo
 
 TOKEN_FILE = "/root/clash-token.txt"
 VLESS_FILE = "/root/vless-link.txt"
 SUB_NAME_FILE = "/root/clash-sub-name.txt"
+# 流量信息文件：由外部脚本写入，内容为完整的 subscription-userinfo 响应头值
+USERINFO_FILE = "/root/clash-sub-userinfo.txt"
 DEFAULT_SUB_NAME = "VPN"
 # Xray 从该版本起 REALITY 支持后量子密钥交换 X25519MLKEM768
 MLKEM_MIN_XRAY_VERSION = (25, 5, 16)
@@ -61,6 +62,20 @@ def load_sub_name():
             return name or DEFAULT_SUB_NAME
     except FileNotFoundError:
         return DEFAULT_SUB_NAME
+
+
+def load_userinfo():
+    """读取流量信息响应头值，原样返回第一个非空行；文件不存在或为空时返回 None"""
+    try:
+        with open(USERINFO_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                # 只取单行，防止换行符导致响应头注入
+                line = line.strip()
+                if line:
+                    return line
+    except (FileNotFoundError, UnicodeDecodeError):
+        pass
+    return None
 
 
 def load_port():
@@ -125,12 +140,6 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         for key, value in (extra_headers or {}).items():
             self.send_header(key, value)
-
-        # 设置订阅流量、订阅过期请求头
-        subscription_userinfo = get_subscription_userinfo()
-        if subscription_userinfo:
-            self.send_header("subscription-userinfo", subscription_userinfo)
-
         self.end_headers()
         self.wfile.write(content)
 
@@ -184,6 +193,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                 headers = {
                     "Content-Disposition": "attachment; filename*=UTF-8''%s" % quote(sub_name, safe=""),
                 }
+                # 订阅流量、到期信息响应头，仅在成功返回订阅时设置
+                subscription_userinfo = load_userinfo()
+                if subscription_userinfo:
+                    headers["subscription-userinfo"] = subscription_userinfo
                 self._send_response(200, config, "text/yaml; charset=utf-8", headers)
             except Exception as e:
                 sys.stderr.write("生成配置失败: %s\n" % e)

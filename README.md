@@ -67,7 +67,7 @@ The script runs in 5 steps:
 ### 2. Install the subscription server
 
 - Install Python 3 if missing
-- Download `server.py`, `convert.py` and `subscription_userinfo.py` to `/opt/clash-sub-server/`
+- Download `server.py` and `convert.py` to `/opt/clash-sub-server/`
 - Register and enable the `clash-sub-server` systemd service
 
 ### 3. Generate the VLESS link
@@ -101,6 +101,7 @@ On each request the server checks the token and calls `convert.py` to build the 
 | `/root/vless-link.txt` | VLESS share link (backup) |
 | `/root/clash-subscription.txt` | Clash subscription URL |
 | `/root/clash-token.txt` | Subscription access token |
+| `/root/clash-sub-userinfo.txt` | Traffic info header value (optional, written by you) |
 | `/usr/local/etc/xray/config.json` | Xray config |
 | `/opt/clash-sub-server/` | Subscription server scripts |
 
@@ -129,30 +130,28 @@ subscription-userinfo: upload=1234; download=2234; total=1024000; expire=2218532
 
 With it, Clash can show traffic usage and the subscription expiry date. Traffic is in bytes, expiry is a Unix timestamp.
 
-Every self-hosted server tracks traffic differently, so you need to provide this value yourself. There are two ways:
-
-**Option 1: write a custom hook** in `/opt/clash-sub-server/subscription_userinfo.py`:
-
-```python
-def custom_hook() -> str:
-    """
-    自定义获取流量信息逻辑
-
-    最终需要返回："upload=1234; download=2234; total=1024000; expire=2218532293"
-    流量信息(单位: 字节)、到期信息(时间戳)
-    """
-
-    return ""
-```
-
-Return the full header value from this function.
-
-**Option 2: provide an executable** named `subinfo` in `/opt/clash-sub-server/`. If `custom_hook()` returns an empty string, the server runs `./subinfo` and uses its output as the header value.
-
-Restart the service after making changes:
+Every self-hosted server tracks traffic differently, so you need to provide this value yourself: use any script (a cron job, vnstat, your cloud provider's API, ...) to write the **full header value** to `/root/clash-sub-userinfo.txt`. The subscription server sends it as-is with every subscription response.
 
 ```bash
-sudo systemctl restart clash-sub-server.service
+echo "upload=1234; download=2234; total=1024000; expire=2218532293" > /root/clash-sub-userinfo.txt
+```
+
+- If the file is missing or empty, the header is not sent. Only the first non-empty line is used
+- The file is re-read on every request, so changes take effect immediately without a restart
+- The file lives in `/root`, so re-running `setup.sh` won't overwrite it
+- Clash clients only read this header when they update the subscription, so updating the file periodically (e.g. every 5 minutes) is enough
+
+To stay compatible with as many clients as possible (Clash Verge parses strictly), use this format:
+
+- Lowercase keys `upload`, `download`, `total`, `expire`, separated by `; `, with no spaces around `=`
+- Values must be non-negative integers: traffic in bytes, expiry as a Unix timestamp in seconds, no decimals or units
+- Omit fields you don't need, e.g. leave out `expire` if you don't want an expiry date shown
+
+Write to a temp file and `mv` it into place so the server never reads a half-written file:
+
+```bash
+echo "upload=0; download=38225207705; total=214748364800" > /root/clash-sub-userinfo.txt.tmp
+mv /root/clash-sub-userinfo.txt.tmp /root/clash-sub-userinfo.txt
 ```
 
 ## Troubleshooting

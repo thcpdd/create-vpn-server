@@ -248,11 +248,11 @@ rm -rf $SERVER_DIR
 mkdir -p $SERVER_DIR
 cd $SERVER_DIR
 
-# 下载订阅服务器脚本（server.py、convert.py、subscription_userinfo.py）
+# 下载订阅服务器脚本（server.py、convert.py）
 SRC_URL="https://raw.githubusercontent.com/thcpdd/create-vpn-server/main/src"
-wget -q "$SRC_URL/server.py" "$SRC_URL/convert.py" "$SRC_URL/subscription_userinfo.py"
+wget -q "$SRC_URL/server.py" "$SRC_URL/convert.py"
 
-if [ ! -f server.py ] || [ ! -f convert.py ] || [ ! -f subscription_userinfo.py ]; then
+if [ ! -f server.py ] || [ ! -f convert.py ]; then
     echo -e "${RED}文件下载失败${NC}"
     exit 1
 fi
