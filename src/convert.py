@@ -83,7 +83,7 @@ rules:
   - MATCH,{group_name_raw}
 """
 
-DEFAULT_GROUP_NAME = "🚀 代理"
+DEFAULT_GROUP_NAME = "代理"
 
 
 def parse_vless_url(url: str) -> dict:
@@ -233,7 +233,7 @@ def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bo
     for link in links:
         nodes.append(parse_vless_url(link))
 
-    group_name = f"🚀 {sub_name}"
+    group_name = sub_name
     return generate_config(nodes, group_name, support_mlkem)
 
 
@@ -276,7 +276,7 @@ def main():
             print(f"  ✗ 解析失败: {e}", file=sys.stderr)
 
     # 生成配置
-    group_name = f"🚀 {args.name}"
+    group_name = args.name
     config = generate_config(nodes, group_name)
 
     if args.output:
