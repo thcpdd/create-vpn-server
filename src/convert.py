@@ -117,8 +117,12 @@ def parse_vless_url(url: str) -> dict:
     }
 
 
-def node_to_clash_proxy(node: dict) -> str:
-    """将一个节点信息转为 Clash VLESS 代理格式"""
+def node_to_clash_proxy(node: dict, support_mlkem: bool = False) -> str:
+    """将一个节点信息转为 Clash VLESS 代理格式
+
+    support_mlkem: 是否开启 REALITY 后量子密钥交换 X25519MLKEM768
+                   （需要服务端 Xray >= 25.5.16，客户端 mihomo >= 1.19.9）
+    """
     lines = [
         f'  - name: "{node["name"]}"',
         f'    type: vless',
@@ -137,6 +141,8 @@ def node_to_clash_proxy(node: dict) -> str:
         lines.append("    reality-opts:")
         lines.append(f'      public-key: {node["pbk"]}')
         lines.append(f'      short-id: "{node["sid"]}"')
+        if support_mlkem:
+            lines.append('      support-x25519mlkem768: true')
         lines.append(f'    client-fingerprint: {node["fp"]}')
     elif node["security"] == "tls":
         lines.append("    tls: true")
@@ -180,7 +186,7 @@ def extract_vless_links(text: str) -> list:
     return urls
 
 
-def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME) -> str:
+def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME, support_mlkem: bool = False) -> str:
     """根据节点列表生成完整 Clash 配置 YAML"""
     if not nodes:
         raise ValueError("没有找到任何 VLESS 节点")
@@ -194,7 +200,7 @@ def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME) -> str:
             unique_nodes.append(n)
 
     # 生成 proxies 块
-    proxy_lines = "\n".join(node_to_clash_proxy(n) for n in unique_nodes)
+    proxy_lines = "\n".join(node_to_clash_proxy(n, support_mlkem) for n in unique_nodes)
 
     # 生成 proxy-groups 中的节点列表（缩进 6 空格）
     group_lines = "\n".join(f'      - "{n["name"]}"' for n in unique_nodes)
@@ -212,11 +218,12 @@ def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME) -> str:
     return config
 
 
-def build_clash_config(vless_text: str, sub_name: str = "VPN") -> str:
+def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bool = False) -> str:
     """一站式转换：从 VLESS 文本直接生成 Clash YAML 配置
 
     vless_text: 包含 VLESS 链接的原始文本（可含多条）
     sub_name:   订阅名称，用于 proxy-groups 显示
+    support_mlkem: 是否在 reality-opts 中开启 support-x25519mlkem768
     """
     links = extract_vless_links(vless_text)
     if not links:
@@ -227,7 +234,7 @@ def build_clash_config(vless_text: str, sub_name: str = "VPN") -> str:
         nodes.append(parse_vless_url(link))
 
     group_name = f"🚀 {sub_name}"
-    return generate_config(nodes, group_name)
+    return generate_config(nodes, group_name, support_mlkem)
 
 
 def main():

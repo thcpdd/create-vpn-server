@@ -11,6 +11,9 @@ Clash 订阅服务器
 
 import sys
 import os
+import re
+import shutil
+import subprocess
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -24,6 +27,8 @@ TOKEN_FILE = "/root/clash-token.txt"
 VLESS_FILE = "/root/vless-link.txt"
 SUB_NAME_FILE = "/root/clash-sub-name.txt"
 DEFAULT_SUB_NAME = "VPN"
+# Xray 从该版本起 REALITY 支持后量子密钥交换 X25519MLKEM768
+MLKEM_MIN_XRAY_VERSION = (25, 5, 16)
 LISTEN_HOST = "0.0.0.0"
 PORT_FILE = "/root/clash-sub-port.txt"
 DEFAULT_PORT = 25500
@@ -67,6 +72,23 @@ def load_port():
     except (FileNotFoundError, ValueError):
         pass
     return DEFAULT_PORT
+
+
+def get_xray_version():
+    """获取本机 Xray 版本号元组，如 (25, 10, 15)；获取失败返回 None"""
+    xray = shutil.which("xray") or "/usr/local/bin/xray"
+    try:
+        out = subprocess.run([xray, "version"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"Xray\s+v?(\d+)\.(\d+)\.(\d+)", out)
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def xray_supports_mlkem():
+    """服务端 Xray 是否支持 X25519MLKEM768（每次请求时检测，升级 Xray 后自动生效）"""
+    version = get_xray_version()
+    return version is not None and version >= MLKEM_MIN_XRAY_VERSION
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -119,7 +141,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             try:
                 sub_name = load_sub_name()
-                config = convert.build_clash_config(vless_text, sub_name)
+                config = convert.build_clash_config(vless_text, sub_name, xray_supports_mlkem())
                 # Clash 客户端从 Content-Disposition 读取订阅名称（缺失时会用 URL 路径 "sub"）
                 # 使用 RFC 5987 编码以支持中文
                 headers = {
