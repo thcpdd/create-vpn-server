@@ -15,7 +15,7 @@
 
 - 使用 systemd 的 Linux 服务器（推荐 Debian / Ubuntu）
 - root 权限
-- 放行随机代理端口和 `25500` 端口的入站流量
+- 放行随机代理端口和随机订阅端口的入站流量
 
 > 还没有服务器？可参考 [海外 VPS 云厂商选择](海外VPS云厂商选择.md)。
 
@@ -37,7 +37,7 @@ bash <(curl -sL https://raw.githubusercontent.com/thcpdd/create-vpn-server/main/
 ```
 ┌──────────────┐   subscription   ┌──────────────────────┐
 │ Clash client │ ◄─────────────── │  clash-sub-server    │
-│ (your device)│                  │  (Python, port 25500)│
+│ (your device)│                  │  (Python, rand port) │
 └──────┬───────┘                  └──────────┬───────────┘
        │                                     │ convert.py
        │                                     │ VLESS link → Clash YAML
@@ -81,7 +81,7 @@ vless://UUID@SERVER_IP:PORT?encryption=none&flow=xtls-rprx-vision&security=reali
 使用 VLESS 链接的 MD5 作为访问令牌：
 
 ```
-http://SERVER_IP:25500/sub?token=<md5_token>
+http://SERVER_IP:SUB_PORT/sub?token=<md5_token>
 ```
 
 每次请求时，服务器校验 token，并调用 `convert.py` 动态生成 Clash YAML 配置。
@@ -109,7 +109,7 @@ http://SERVER_IP:25500/sub?token=<md5_token>
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | `xray` | 随机端口 | 代理服务 |
-| `clash-sub-server` | 25500 | 订阅转换服务 |
+| `clash-sub-server` | 随机（保存在 `/root/clash-sub-port.txt`） | 订阅转换服务 |
 
 ### 订阅接口
 
@@ -156,7 +156,7 @@ sudo systemctl restart clash-sub-server.service
 
 ## 常见问题
 
-- **客户端无法连接**：除服务器防火墙外，还需在云厂商的安全组中放行代理端口和 `25500`
+- **客户端无法连接**：除服务器防火墙外，还需在云厂商的安全组中放行代理端口和订阅端口
 - **查看订阅服务器日志**：`journalctl -u clash-sub-server -n 50`
 - **查看 Xray 日志**：`journalctl -u xray -n 50`
 

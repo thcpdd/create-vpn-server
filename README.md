@@ -15,7 +15,7 @@ Deploy a VLESS-Reality proxy on a Linux server with a single command, and get a 
 
 - A Linux server with systemd (Debian / Ubuntu recommended)
 - Root privileges
-- Inbound access to the random proxy port and port `25500`
+- Inbound access to the random proxy port and the random subscription port
 
 > Choosing a VPS? See the [overseas VPS provider guide](海外VPS云厂商选择.md) (Chinese only).
 
@@ -37,7 +37,7 @@ When it finishes, copy the printed Clash subscription URL into your client:
 ```
 ┌──────────────┐   subscription   ┌──────────────────────┐
 │ Clash client │ ◄─────────────── │  clash-sub-server    │
-│ (your device)│                  │  (Python, port 25500)│
+│ (your device)│                  │  (Python, rand port) │
 └──────┬───────┘                  └──────────┬───────────┘
        │                                     │ convert.py
        │                                     │ VLESS link → Clash YAML
@@ -81,7 +81,7 @@ vless://UUID@SERVER_IP:PORT?encryption=none&flow=xtls-rprx-vision&security=reali
 The MD5 of the VLESS link is used as the access token:
 
 ```
-http://SERVER_IP:25500/sub?token=<md5_token>
+http://SERVER_IP:SUB_PORT/sub?token=<md5_token>
 ```
 
 On each request the server checks the token and calls `convert.py` to build the Clash YAML on the fly.
@@ -109,7 +109,7 @@ On each request the server checks the token and calls `convert.py` to build the 
 | Service | Port | Description |
 |---------|------|-------------|
 | `xray` | random | Proxy service |
-| `clash-sub-server` | 25500 | Subscription service |
+| `clash-sub-server` | Random (saved in `/root/clash-sub-port.txt`) | Subscription service |
 
 ### Subscription endpoints
 
@@ -156,7 +156,7 @@ sudo systemctl restart clash-sub-server.service
 
 ## Troubleshooting
 
-- **Client cannot connect**: besides the server firewall, make sure your cloud provider's security group allows the proxy port and `25500`
+- **Client cannot connect**: besides the server firewall, make sure your cloud provider's security group allows the proxy port and the subscription port
 - **Subscription server logs**: `journalctl -u clash-sub-server -n 50`
 - **Xray logs**: `journalctl -u xray -n 50`
 

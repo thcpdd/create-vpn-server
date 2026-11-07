@@ -39,8 +39,28 @@ echo -e "${GREEN}订阅名称: $SUB_NAME${NC}"
 # ============================================
 echo -e "${BLUE}[1/5] 安装 Xray 和 VLESS-Reality...${NC}"
 
-# 生成随机端口
+# 判断端口是否已被占用
+port_in_use() {
+    ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1$"
+}
+
+# 订阅服务器端口：首次运行随机生成并保存，之后复用（保证已有订阅地址不失效）
+SUB_PORT_FILE="/root/clash-sub-port.txt"
+SUB_PORT=$(cat "$SUB_PORT_FILE" 2>/dev/null | tr -cd '0-9')
+if [ -z "$SUB_PORT" ] || [ "$SUB_PORT" -lt 1024 ] || [ "$SUB_PORT" -gt 65535 ]; then
+    SUB_PORT=$((RANDOM % 40000 + 10000))
+    while port_in_use "$SUB_PORT"; do
+        SUB_PORT=$((RANDOM % 40000 + 10000))
+    done
+    echo "$SUB_PORT" > "$SUB_PORT_FILE"
+    chmod 600 "$SUB_PORT_FILE"
+fi
+
+# 生成随机代理端口（不能与订阅端口相同，且未被占用）
 RANDOM_PORT=$((RANDOM % 40000 + 10000))
+while [ "$RANDOM_PORT" -eq "$SUB_PORT" ] || port_in_use "$RANDOM_PORT"; do
+    RANDOM_PORT=$((RANDOM % 40000 + 10000))
+done
 # 生成随机 UUID
 UUID=$(cat /proc/sys/kernel/random/uuid)
 
@@ -115,7 +135,8 @@ RANDOM_INDEX=$((RANDOM % ${#FAKE_DOMAINS[@]}))
 SNI=${FAKE_DOMAINS[$RANDOM_INDEX]}
 
 echo -e "${GREEN}✓ 配置生成完成${NC}"
-echo -e "  - 端口: $RANDOM_PORT"
+echo -e "  - 代理端口: $RANDOM_PORT"
+echo -e "  - 订阅端口: $SUB_PORT"
 echo -e "  - UUID: $UUID"
 echo -e "  - Private Key: ${PRIVATE_KEY:0:20}..."
 echo -e "  - Public Key: ${PUBLIC_KEY:0:20}..."
@@ -197,14 +218,14 @@ else
 fi
 
 # 开放端口
-echo -e "${YELLOW}开放端口 $RANDOM_PORT 和 25500${NC}"
+echo -e "${YELLOW}开放端口 $RANDOM_PORT 和 $SUB_PORT${NC}"
 if command -v ufw &> /dev/null; then
     ufw allow $RANDOM_PORT/tcp >/dev/null 2>&1
-    ufw allow 25500/tcp >/dev/null 2>&1
+    ufw allow $SUB_PORT/tcp >/dev/null 2>&1
     echo -e "${GREEN}✓ ufw 规则已添加${NC}"
 elif command -v firewall-cmd &> /dev/null; then
     firewall-cmd --permanent --add-port=$RANDOM_PORT/tcp >/dev/null 2>&1
-    firewall-cmd --permanent --add-port=25500/tcp >/dev/null 2>&1
+    firewall-cmd --permanent --add-port=$SUB_PORT/tcp >/dev/null 2>&1
     firewall-cmd --reload >/dev/null 2>&1
     echo -e "${GREEN}✓ firewalld 规则已添加${NC}"
 else
@@ -287,7 +308,7 @@ echo "$CLASH_TOKEN" > /root/clash-token.txt
 printf '%s\n' "$SUB_NAME" > /root/clash-sub-name.txt
 chmod 600 /root/clash-token.txt /root/vless-link.txt /root/clash-sub-name.txt
 
-SUB_URL="http://$SERVER_IP:25500/sub?token=$CLASH_TOKEN"
+SUB_URL="http://$SERVER_IP:$SUB_PORT/sub?token=$CLASH_TOKEN"
 echo "$SUB_URL" > /root/clash-subscription.txt
 
 echo -e "${GREEN}✓ Clash 订阅链接已生成${NC}"
@@ -298,7 +319,7 @@ echo -e "${GREEN}✓ Clash 订阅链接已生成${NC}"
 echo -e "${BLUE}[5/5] 测试连接...${NC}"
 
 sleep 3
-if curl -s "http://localhost:25500/version" > /dev/null 2>&1; then
+if curl -s "http://localhost:$SUB_PORT/version" > /dev/null 2>&1; then
     echo -e "${GREEN}✓ 订阅服务器工作正常${NC}"
 else
     echo -e "${YELLOW}⚠ 订阅服务器可能需要几秒启动，稍后可测试${NC}"
@@ -333,6 +354,7 @@ echo -e "${YELLOW}文件保存位置:${NC}"
 echo -e "  VLESS 链接: /root/vless-link.txt"
 echo -e "  订阅地址: /root/clash-subscription.txt"
 echo -e "  订阅名称: /root/clash-sub-name.txt"
+echo -e "  订阅端口: /root/clash-sub-port.txt"
 echo -e "  订阅服务器: /opt/clash-sub-server/"
 echo -e "${BLUE}========================================${NC}"
 echo ""

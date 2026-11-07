@@ -1,7 +1,7 @@
 """
 Clash 订阅服务器
 
-监听 25500 端口，将 VLESS 链接动态转换为 Clash YAML 配置供客户端订阅。
+监听随机端口（由 setup.sh 首次运行时生成，保存在 /root/clash-sub-port.txt），将 VLESS 链接动态转换为 Clash YAML 配置供客户端订阅。
 零外部依赖，仅使用 Python 内置库。
 
 端点:
@@ -25,7 +25,8 @@ VLESS_FILE = "/root/vless-link.txt"
 SUB_NAME_FILE = "/root/clash-sub-name.txt"
 DEFAULT_SUB_NAME = "VPN"
 LISTEN_HOST = "0.0.0.0"
-LISTEN_PORT = 25500
+PORT_FILE = "/root/clash-sub-port.txt"
+DEFAULT_PORT = 25500
 
 
 def load_token():
@@ -54,6 +55,18 @@ def load_sub_name():
             return name or DEFAULT_SUB_NAME
     except FileNotFoundError:
         return DEFAULT_SUB_NAME
+
+
+def load_port():
+    """读取监听端口，文件不存在或无效时使用默认端口"""
+    try:
+        with open(PORT_FILE, "r") as f:
+            port = int(f.read().strip())
+            if 1 <= port <= 65535:
+                return port
+    except (FileNotFoundError, ValueError):
+        pass
+    return DEFAULT_PORT
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -122,8 +135,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    server = HTTPServer((LISTEN_HOST, LISTEN_PORT), RequestHandler)
-    print("Clash 订阅服务器已启动: http://%s:%s" % (LISTEN_HOST, LISTEN_PORT), file=sys.stderr)
+    port = load_port()
+    server = HTTPServer((LISTEN_HOST, port), RequestHandler)
+    print("Clash 订阅服务器已启动: http://%s:%s" % (LISTEN_HOST, port), file=sys.stderr)
     token = load_token()
     if token:
         print("订阅端点: /sub?token=%s" % token, file=sys.stderr)
