@@ -114,6 +114,8 @@ def parse_vless_url(url: str) -> dict:
         "fp": param("fp", "chrome"),
         "pbk": param("pbk", ""),
         "sid": param("sid", ""),
+        "path": param("path", ""),
+        "host": param("host", ""),
     }
 
 
@@ -150,6 +152,17 @@ def node_to_clash_proxy(node: dict, support_mlkem: bool = False) -> str:
             lines.append(f'    servername: {node["sni"]}')
         if node["flow"]:
             lines.append(f'    flow: {node["flow"]}')
+        if node["fp"]:
+            lines.append(f'    client-fingerprint: {node["fp"]}')
+
+    if node["network"] == "ws":
+        ws_path = node.get("path") or "/"
+        ws_host = node.get("host") or node.get("sni") or ""
+        lines.append("    ws-opts:")
+        lines.append(f'      path: "{ws_path}"')
+        if ws_host:
+            lines.append("      headers:")
+            lines.append(f'        Host: "{ws_host}"')
 
     return "\n".join(lines)
 

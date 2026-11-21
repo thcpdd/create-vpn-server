@@ -34,6 +34,20 @@ SUB_NAME=$(echo "$SUB_NAME" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]
 SUB_NAME=${SUB_NAME:-VPN}
 echo -e "${GREEN}订阅名称: $SUB_NAME${NC}"
 
+# 可选：输入用于 VLESS-WS-TLS 的域名
+WS_DOMAIN=""
+if [ -t 0 ] || [ -r /dev/tty ]; then
+    read -r -p "请输入用于 VLESS-WS-TLS 的域名 (直接回车跳过，仅安装 VLESS-Reality): " WS_DOMAIN < /dev/tty
+fi
+WS_DOMAIN=$(echo "$WS_DOMAIN" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+ENABLE_WS=false
+if [ -n "$WS_DOMAIN" ]; then
+    ENABLE_WS=true
+    echo -e "${GREEN}将同时部署 VLESS-Reality + VLESS-WS-TLS (域名: $WS_DOMAIN)${NC}"
+else
+    echo -e "${YELLOW}未输入域名，仅部署 VLESS-Reality${NC}"
+fi
+
 # ============================================
 # 第一步：安装 Xray + VLESS-Reality
 # ============================================
@@ -61,6 +75,44 @@ RANDOM_PORT=$((RANDOM % 40000 + 10000))
 while [ "$RANDOM_PORT" -eq "$SUB_PORT" ] || port_in_use "$RANDOM_PORT"; do
     RANDOM_PORT=$((RANDOM % 40000 + 10000))
 done
+
+# 若启用 WS+TLS，选择 Cloudflare 支持的 HTTPS 端口（优先 443）
+WS_PORT=""
+WS_PATH=""
+if [ "$ENABLE_WS" = true ]; then
+    for p in 443 8443 2053 2083 2087 2096; do
+        if [ "$p" -ne "$SUB_PORT" ] && [ "$p" -ne "$RANDOM_PORT" ] && ! port_in_use "$p"; then
+            WS_PORT=$p
+            break
+        fi
+    done
+    if [ -z "$WS_PORT" ]; then
+        WS_PORT=$((RANDOM % 40000 + 10000))
+        while [ "$WS_PORT" -eq "$SUB_PORT" ] || [ "$WS_PORT" -eq "$RANDOM_PORT" ] || port_in_use "$WS_PORT"; do
+            WS_PORT=$((RANDOM % 40000 + 10000))
+        done
+        echo -e "${YELLOW}⚠ Cloudflare 常用 HTTPS 端口均被占用，WS-TLS 将使用端口 $WS_PORT${NC}"
+    fi
+    WS_PATH="/$(openssl rand -hex 6)"
+fi
+
+# 开放防火墙端口（若启用 WS+TLS，需提前开放 80 端口用于申请证书）
+allow_port() {
+    local p=$1
+    if command -v ufw &> /dev/null; then
+        ufw allow "$p/tcp" >/dev/null 2>&1
+    elif command -v firewall-cmd &> /dev/null; then
+        firewall-cmd --permanent --add-port="$p/tcp" >/dev/null 2>&1
+    fi
+}
+
+if [ "$ENABLE_WS" = true ]; then
+    allow_port 80
+    allow_port "$WS_PORT"
+    if command -v firewall-cmd &> /dev/null; then
+        firewall-cmd --reload >/dev/null 2>&1
+    fi
+fi
 # 生成随机 UUID
 UUID=$(cat /proc/sys/kernel/random/uuid)
 
@@ -135,13 +187,99 @@ RANDOM_INDEX=$((RANDOM % ${#FAKE_DOMAINS[@]}))
 SNI=${FAKE_DOMAINS[$RANDOM_INDEX]}
 
 echo -e "${GREEN}✓ 配置生成完成${NC}"
-echo -e "  - 代理端口: $RANDOM_PORT"
+echo -e "  - Reality 端口: $RANDOM_PORT"
+if [ "$ENABLE_WS" = true ]; then
+    echo -e "  - WS-TLS 端口: $WS_PORT"
+    echo -e "  - WS-TLS 域名: $WS_DOMAIN"
+    echo -e "  - WS-TLS 路径: $WS_PATH"
+fi
 echo -e "  - 订阅端口: $SUB_PORT"
 echo -e "  - UUID: $UUID"
 echo -e "  - Private Key: ${PRIVATE_KEY:0:20}..."
 echo -e "  - Public Key: ${PUBLIC_KEY:0:20}..."
 echo -e "  - Short ID: $SHORT_ID"
 echo -e "  - 伪装域名: $SNI"
+
+# 若启用 WS+TLS，使用 acme.sh (HTTP-01 80 端口) 自动申请并配置续签证书
+CERT_DIR="/usr/local/etc/xray/cert"
+CERT_FILE="$CERT_DIR/fullchain.cer"
+KEY_FILE_TLS="$CERT_DIR/private.key"
+if [ "$ENABLE_WS" = true ]; then
+    echo -e "${YELLOW}正在为 $WS_DOMAIN 申请 TLS 证书 (80 端口验证)...${NC}"
+    if port_in_use 80; then
+        echo -e "${RED}✗ 80 端口已被占用，无法使用 HTTP-01 自动申请证书，请先释放 80 端口${NC}"
+        exit 1
+    fi
+
+    if command -v apt-get &> /dev/null; then
+        apt-get update -qq && apt-get install -y -qq socat cron >/dev/null 2>&1
+    elif command -v yum &> /dev/null; then
+        yum install -y -q socat cronie >/dev/null 2>&1
+    elif command -v dnf &> /dev/null; then
+        dnf install -y -q socat cronie >/dev/null 2>&1
+    fi
+
+    ACME_BIN="/root/.acme.sh/acme.sh"
+    if [ ! -f "$ACME_BIN" ]; then
+        curl -fsSL https://get.acme.sh | sh -s email="admin@${WS_DOMAIN}"
+    fi
+    if [ ! -f "$ACME_BIN" ]; then
+        echo -e "${RED}✗ acme.sh 安装失败${NC}"
+        exit 1
+    fi
+
+    "$ACME_BIN" --issue -d "$WS_DOMAIN" --standalone --server letsencrypt --keylength ec-256
+    ISSUE_RC=$?
+    if [ "$ISSUE_RC" -ne 0 ] && [ "$ISSUE_RC" -ne 2 ]; then
+        echo -e "${RED}✗ 证书申请失败，请检查域名解析是否已生效、80 端口是否开放，以及 Cloudflare 是否未开启强制 HTTPS${NC}"
+        exit 1
+    fi
+
+    mkdir -p "$CERT_DIR"
+    if ! "$ACME_BIN" --install-cert -d "$WS_DOMAIN" --ecc \
+        --key-file "$KEY_FILE_TLS" \
+        --fullchain-file "$CERT_FILE" \
+        --reloadcmd "chmod 644 $KEY_FILE_TLS $CERT_FILE && systemctl restart xray"; then
+        echo -e "${RED}✗ 证书安装失败${NC}"
+        exit 1
+    fi
+    chmod 755 "$CERT_DIR"
+    chmod 644 "$KEY_FILE_TLS" "$CERT_FILE"
+    echo -e "${GREEN}✓ TLS 证书已就绪并配置自动续签${NC}"
+fi
+
+# 构建可选的 WS+TLS inbound JSON 片段
+WS_INBOUND=""
+if [ "$ENABLE_WS" = true ]; then
+    WS_INBOUND=",
+    {
+      \"port\": $WS_PORT,
+      \"protocol\": \"vless\",
+      \"settings\": {
+        \"clients\": [
+          {
+            \"id\": \"$UUID\"
+          }
+        ],
+        \"decryption\": \"none\"
+      },
+      \"streamSettings\": {
+        \"network\": \"ws\",
+        \"security\": \"tls\",
+        \"tlsSettings\": {
+          \"certificates\": [
+            {
+              \"certificateFile\": \"$CERT_FILE\",
+              \"keyFile\": \"$KEY_FILE_TLS\"
+            }
+          ]
+        },
+        \"wsSettings\": {
+          \"path\": \"$WS_PATH\"
+        }
+      }
+    }"
+fi
 
 # 创建 Xray 配置文件
 mkdir -p /usr/local/etc/xray
@@ -179,7 +317,7 @@ cat > /usr/local/etc/xray/config.json << EOF
           ]
         }
       }
-    }
+    }$WS_INBOUND
   ],
   "outbounds": [
     {
@@ -196,10 +334,10 @@ EOF
 
 # 验证配置文件
 echo -e "${YELLOW}验证配置文件...${NC}"
-if ! /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json > /dev/null 2>&1; then
+if ! "$XRAY_CMD" run -test -config /usr/local/etc/xray/config.json > /dev/null 2>&1; then
     echo -e "${RED}配置文件验证失败，尝试修复...${NC}"
     # 显示错误详情
-    /usr/local/bin/xray run -test -config /usr/local/etc/xray/config.json
+    "$XRAY_CMD" run -test -config /usr/local/etc/xray/config.json
     exit 1
 fi
 echo -e "${GREEN}✓ 配置文件验证通过${NC}"
@@ -290,12 +428,19 @@ fi
 # ============================================
 # 第三步：生成 VLESS 链接
 # ============================================
-echo -e "${BLUE}[3/5] 生成 VLESS-Reality 链接...${NC}"
+echo -e "${BLUE}[3/5] 生成 VLESS 链接...${NC}"
 
 VLESS_LINK="vless://$UUID@$SERVER_IP:$RANDOM_PORT?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$SNI&fp=chrome&pbk=$PUBLIC_KEY&sid=$SHORT_ID&type=tcp&headerType=none#VLESS-Reality"
+echo "$VLESS_LINK" > /root/vless-link.txt
+
+VLESS_WS_LINK=""
+if [ "$ENABLE_WS" = true ]; then
+    WS_PATH_ENCODED=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$WS_PATH" 2>/dev/null || echo "$WS_PATH")
+    VLESS_WS_LINK="vless://$UUID@$WS_DOMAIN:$WS_PORT?encryption=none&security=tls&sni=$WS_DOMAIN&fp=chrome&type=ws&host=$WS_DOMAIN&path=$WS_PATH_ENCODED#VLESS-WS-TLS"
+    echo "$VLESS_WS_LINK" >> /root/vless-link.txt
+fi
 
 echo -e "${GREEN}✓ VLESS 链接已生成${NC}"
-echo "$VLESS_LINK" > /root/vless-link.txt
 
 # ============================================
 # 第四步：生成 Clash 订阅链接
@@ -327,9 +472,16 @@ fi
 
 # 测试 Xray 端口
 if ss -tlnp | grep -q ":$RANDOM_PORT"; then
-    echo -e "${GREEN}✓ Xray 正在监听端口 $RANDOM_PORT${NC}"
+    echo -e "${GREEN}✓ Xray Reality 正在监听端口 $RANDOM_PORT${NC}"
 else
     echo -e "${YELLOW}⚠ 请检查防火墙是否开放端口 $RANDOM_PORT${NC}"
+fi
+if [ "$ENABLE_WS" = true ]; then
+    if ss -tlnp | grep -q ":$WS_PORT"; then
+        echo -e "${GREEN}✓ Xray WS-TLS 正在监听端口 $WS_PORT${NC}"
+    else
+        echo -e "${YELLOW}⚠ 请检查防火墙是否开放端口 $WS_PORT${NC}"
+    fi
 fi
 
 # 最终输出
@@ -341,7 +493,12 @@ echo -e "${YELLOW}📡 Clash 订阅地址 (填入 Clash 订阅栏):${NC}"
 echo -e "${GREEN}$SUB_URL${NC}"
 echo ""
 echo -e "${YELLOW}🔗 VLESS 链接 (备用):${NC}"
-echo -e "  $VLESS_LINK"
+echo -e "  Reality: $VLESS_LINK"
+if [ "$ENABLE_WS" = true ]; then
+    echo -e "  WS-TLS:  $VLESS_WS_LINK"
+    echo ""
+    echo -e "${YELLOW}💡 Cloudflare 提示: 若开启小黄云代理，请确保 SSL/TLS 加密模式为「完全 (Full)」或「完全(严格)」${NC}"
+fi
 echo ""
 echo -e "${BLUE}========================================${NC}"
 echo -e "${YELLOW}使用说明:${NC}"
