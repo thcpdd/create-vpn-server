@@ -40,8 +40,10 @@ dns:
     - www.msftncsi.com
     - www.msftconnecttest.com
   default-nameserver:
+    - tls://1.12.12.12
     - tls://223.5.5.5
   proxy-server-nameserver:
+    - tls://1.12.12.12
     - tls://223.5.5.5
   nameserver:
     - 'https://1.1.1.1/dns-query#{group_name_raw}'
