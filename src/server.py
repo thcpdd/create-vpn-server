@@ -14,6 +14,7 @@ import os
 import ipaddress
 import re
 import shutil
+import ssl
 import subprocess
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs, quote
@@ -34,6 +35,9 @@ MLKEM_MIN_XRAY_VERSION = (25, 5, 16)
 LISTEN_HOST = "0.0.0.0"
 PORT_FILE = "/root/clash-sub-port.txt"
 DEFAULT_PORT = 25500
+TLS_FLAG_FILE = "/root/clash-sub-tls.txt"
+CERT_FILE = "/usr/local/etc/xray/cert/fullchain.cer"
+KEY_FILE = "/usr/local/etc/xray/cert/private.key"
 
 
 def load_token():
@@ -206,10 +210,27 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._send_response(404, "Not Found")
 
 
+def is_tls_enabled():
+    """检查是否启用 HTTPS（由 setup.sh 写入标记文件，且证书与私钥均存在）"""
+    try:
+        with open(TLS_FLAG_FILE, "r") as f:
+            if f.read().strip() != "1":
+                return False
+    except FileNotFoundError:
+        return False
+    return os.path.isfile(CERT_FILE) and os.path.isfile(KEY_FILE)
+
+
 def main():
     port = load_port()
     server = ThreadingHTTPServer((LISTEN_HOST, port), RequestHandler)
-    print("Clash 订阅服务器已启动: http://%s:%s" % (LISTEN_HOST, port), file=sys.stderr)
+    scheme = "http"
+    if is_tls_enabled():
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=CERT_FILE, keyfile=KEY_FILE)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+    print("Clash 订阅服务器已启动: %s://%s:%s" % (scheme, LISTEN_HOST, port), file=sys.stderr)
     token = load_token()
     if token:
         print("订阅端点: /sub?token=%s" % token, file=sys.stderr)

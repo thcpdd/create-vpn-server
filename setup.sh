@@ -58,21 +58,41 @@ port_in_use() {
     ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]$1$"
 }
 
-# 订阅服务器端口：首次运行随机生成并保存，之后复用（保证已有订阅地址不失效）
+# 订阅服务器端口：首次运行生成并保存，之后复用（保证已有订阅地址不失效）
+# 若启用了 WS+TLS 域名，优先使用 Cloudflare 支持的 HTTPS 端口以便代理与 HTTPS 访问
+CF_HTTPS_PORTS=(443 8443 2053 2083 2087 2096)
+is_cf_https_port() {
+    local target=$1
+    for p in "${CF_HTTPS_PORTS[@]}"; do
+        if [ "$p" -eq "$target" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 SUB_PORT_FILE="/root/clash-sub-port.txt"
 SUB_PORT=$(cat "$SUB_PORT_FILE" 2>/dev/null | tr -cd '0-9')
-if [ -z "$SUB_PORT" ] || [ "$SUB_PORT" -lt 1024 ] || [ "$SUB_PORT" -gt 65535 ]; then
-    SUB_PORT=$((RANDOM % 40000 + 10000))
-    while port_in_use "$SUB_PORT"; do
+if [ -z "$SUB_PORT" ] || [ "$SUB_PORT" -lt 1 ] || [ "$SUB_PORT" -gt 65535 ]; then
+    SUB_PORT=""
+fi
+if [ "$ENABLE_WS" = true ] && [ -n "$SUB_PORT" ] && ! is_cf_https_port "$SUB_PORT"; then
+    SUB_PORT=""
+fi
+if [ "$ENABLE_WS" = false ]; then
+    if [ -z "$SUB_PORT" ] || [ "$SUB_PORT" -lt 1024 ]; then
         SUB_PORT=$((RANDOM % 40000 + 10000))
-    done
-    echo "$SUB_PORT" > "$SUB_PORT_FILE"
-    chmod 600 "$SUB_PORT_FILE"
+        while port_in_use "$SUB_PORT"; do
+            SUB_PORT=$((RANDOM % 40000 + 10000))
+        done
+        echo "$SUB_PORT" > "$SUB_PORT_FILE"
+        chmod 600 "$SUB_PORT_FILE"
+    fi
 fi
 
 # 生成随机代理端口（不能与订阅端口相同，且未被占用）
 RANDOM_PORT=$((RANDOM % 40000 + 10000))
-while [ "$RANDOM_PORT" -eq "$SUB_PORT" ] || port_in_use "$RANDOM_PORT"; do
+while [ "$RANDOM_PORT" = "$SUB_PORT" ] || port_in_use "$RANDOM_PORT"; do
     RANDOM_PORT=$((RANDOM % 40000 + 10000))
 done
 
@@ -80,18 +100,35 @@ done
 WS_PORT=""
 WS_PATH=""
 if [ "$ENABLE_WS" = true ]; then
-    for p in 443 8443 2053 2083 2087 2096; do
-        if [ "$p" -ne "$SUB_PORT" ] && [ "$p" -ne "$RANDOM_PORT" ] && ! port_in_use "$p"; then
+    for p in "${CF_HTTPS_PORTS[@]}"; do
+        if [ "$p" != "$SUB_PORT" ] && [ "$p" -ne "$RANDOM_PORT" ] && ! port_in_use "$p"; then
             WS_PORT=$p
             break
         fi
     done
     if [ -z "$WS_PORT" ]; then
         WS_PORT=$((RANDOM % 40000 + 10000))
-        while [ "$WS_PORT" -eq "$SUB_PORT" ] || [ "$WS_PORT" -eq "$RANDOM_PORT" ] || port_in_use "$WS_PORT"; do
+        while [ "$WS_PORT" = "$SUB_PORT" ] || [ "$WS_PORT" -eq "$RANDOM_PORT" ] || port_in_use "$WS_PORT"; do
             WS_PORT=$((RANDOM % 40000 + 10000))
         done
         echo -e "${YELLOW}⚠ Cloudflare 常用 HTTPS 端口均被占用，WS-TLS 将使用端口 $WS_PORT${NC}"
+    fi
+    if [ -z "$SUB_PORT" ]; then
+        for p in "${CF_HTTPS_PORTS[@]}"; do
+            if [ "$p" -ne "$WS_PORT" ] && [ "$p" -ne "$RANDOM_PORT" ] && ! port_in_use "$p"; then
+                SUB_PORT=$p
+                break
+            fi
+        done
+        if [ -z "$SUB_PORT" ]; then
+            SUB_PORT=$((RANDOM % 40000 + 10000))
+            while [ "$SUB_PORT" -eq "$WS_PORT" ] || [ "$SUB_PORT" -eq "$RANDOM_PORT" ] || port_in_use "$SUB_PORT"; do
+                SUB_PORT=$((RANDOM % 40000 + 10000))
+            done
+            echo -e "${YELLOW}⚠ Cloudflare 常用 HTTPS 端口均被占用，订阅服务将使用端口 $SUB_PORT${NC}"
+        fi
+        echo "$SUB_PORT" > "$SUB_PORT_FILE"
+        chmod 600 "$SUB_PORT_FILE"
     fi
     WS_PATH="/$(openssl rand -hex 6)"
 fi
@@ -239,7 +276,7 @@ if [ "$ENABLE_WS" = true ]; then
     if ! "$ACME_BIN" --install-cert -d "$WS_DOMAIN" --ecc \
         --key-file "$KEY_FILE_TLS" \
         --fullchain-file "$CERT_FILE" \
-        --reloadcmd "chmod 644 $KEY_FILE_TLS $CERT_FILE && systemctl restart xray"; then
+        --reloadcmd "chmod 644 $KEY_FILE_TLS $CERT_FILE && systemctl restart xray && (systemctl is-active --quiet clash-sub-server && systemctl restart clash-sub-server || true)"; then
         echo -e "${RED}✗ 证书安装失败${NC}"
         exit 1
     fi
@@ -395,6 +432,14 @@ if [ ! -f server.py ] || [ ! -f convert.py ]; then
     exit 1
 fi
 
+# 写入订阅服务器 TLS 启用标记（启用 WS+TLS 域名时复用已申请的证书提供 HTTPS）
+if [ "$ENABLE_WS" = true ]; then
+    echo "1" > /root/clash-sub-tls.txt
+else
+    echo "0" > /root/clash-sub-tls.txt
+fi
+chmod 600 /root/clash-sub-tls.txt
+
 # 创建 systemd 服务
 cat > /etc/systemd/system/clash-sub-server.service << EOF
 [Unit]
@@ -453,7 +498,11 @@ echo "$CLASH_TOKEN" > /root/clash-token.txt
 printf '%s\n' "$SUB_NAME" > /root/clash-sub-name.txt
 chmod 600 /root/clash-token.txt /root/vless-link.txt /root/clash-sub-name.txt
 
-SUB_URL="http://$SERVER_IP:$SUB_PORT/sub?token=$CLASH_TOKEN"
+if [ "$ENABLE_WS" = true ]; then
+    SUB_URL="https://$WS_DOMAIN:$SUB_PORT/sub?token=$CLASH_TOKEN"
+else
+    SUB_URL="http://$SERVER_IP:$SUB_PORT/sub?token=$CLASH_TOKEN"
+fi
 echo "$SUB_URL" > /root/clash-subscription.txt
 
 echo -e "${GREEN}✓ Clash 订阅链接已生成${NC}"
@@ -464,7 +513,12 @@ echo -e "${GREEN}✓ Clash 订阅链接已生成${NC}"
 echo -e "${BLUE}[5/5] 测试连接...${NC}"
 
 sleep 3
-if curl -s "http://localhost:$SUB_PORT/version" > /dev/null 2>&1; then
+if [ "$ENABLE_WS" = true ]; then
+    SUB_TEST_URL="https://localhost:$SUB_PORT/version"
+else
+    SUB_TEST_URL="http://localhost:$SUB_PORT/version"
+fi
+if curl -sk "$SUB_TEST_URL" > /dev/null 2>&1; then
     echo -e "${GREEN}✓ 订阅服务器工作正常${NC}"
 else
     echo -e "${YELLOW}⚠ 订阅服务器可能需要几秒启动，稍后可测试${NC}"
