@@ -143,7 +143,7 @@ VLESS-Reality 适合直连场景，但如果你的 VPS IP 容易被墙、或已�
 | 接口 | 说明 |
 |------|------|
 | `GET /sub?token=<token>` | 返回 Clash YAML 配置 |
-| `GET /sub?token=<token>&node_ip=<ip>&node_port=<port>` | 同上，但代理节点的 `server` / `port` 改为 `<ip>`（支持 IPv4/IPv6）/ `<port>`，适用于客户端经中转服务器转发到本机的场景。两个参数均可选，可单独使用 |
+| `GET /sub?token=<token>&reality_server=<addr>&reality_port=<port>&ws_server=<addr>` | 同上，支持按节点类型覆盖连接地址（参数均可选，可任意组合）：<br>- `reality_server` / `reality_port`：覆盖 Reality 节点的 `server` / `port`（支持 IPv4/IPv6 或域名），适用于经中转服务器转发到本机的场景<br>- `ws_server`：覆盖 WS-TLS 节点的 `server`（支持优选 IP 或域名，保留原 `servername` 与 `Host`），适用于 CDN 优选入口场景 |
 | `GET /version` | 健康检查 |
 
 ## 流量信息响应头

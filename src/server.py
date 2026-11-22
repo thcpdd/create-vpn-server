@@ -111,19 +111,31 @@ def xray_supports_mlkem():
     return version is not None and version >= MLKEM_MIN_XRAY_VERSION
 
 
-def parse_node_ip(value):
-    """校验 node_ip 参数，返回规范化的 IP 字符串；不是合法 IPv4/IPv6 地址时返回 None"""
+DOMAIN_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*"
+    r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$"
+)
+
+
+def parse_server_addr(value):
+    """校验 server 参数，支持 IPv4/IPv6 或合法域名；无效时返回 None"""
     value = value.strip()
+    if not value:
+        return None
     if value.startswith("[") and value.endswith("]"):
         value = value[1:-1]
     try:
         return str(ipaddress.ip_address(value))
     except ValueError:
-        return None
+        pass
+    # 排除纯数字末尾段（避免将 999.999.999.999 等非法 IPv4 误判为域名）
+    if DOMAIN_RE.match(value) and not value.split(".")[-1].isdigit():
+        return value
+    return None
 
 
-def parse_node_port(value):
-    """校验 node_port 参数，返回 1-65535 的整数；无效时返回 None"""
+def parse_port(value):
+    """校验端口参数，返回 1-65535 的整数；无效时返回 None"""
     value = value.strip()
     if not value.isdigit():
         return None
@@ -168,20 +180,28 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self._send_response(403, "token 无效")
                 return
 
-            node_ip = None
-            raw_node_ip = params.get("node_ip", [""])[0]
-            if raw_node_ip:
-                node_ip = parse_node_ip(raw_node_ip)
-                if not node_ip:
-                    self._send_response(400, "node_ip 不是有效的 IP 地址")
+            reality_server = None
+            raw_reality_server = params.get("reality_server", [""])[0]
+            if raw_reality_server:
+                reality_server = parse_server_addr(raw_reality_server)
+                if not reality_server:
+                    self._send_response(400, "reality_server 不是有效的 IP 或域名")
                     return
 
-            node_port = None
-            raw_node_port = params.get("node_port", [""])[0]
-            if raw_node_port:
-                node_port = parse_node_port(raw_node_port)
-                if not node_port:
-                    self._send_response(400, "node_port 不是有效的端口（1-65535）")
+            reality_port = None
+            raw_reality_port = params.get("reality_port", [""])[0]
+            if raw_reality_port:
+                reality_port = parse_port(raw_reality_port)
+                if not reality_port:
+                    self._send_response(400, "reality_port 不是有效的端口（1-65535）")
+                    return
+
+            ws_server = None
+            raw_ws_server = params.get("ws_server", [""])[0]
+            if raw_ws_server:
+                ws_server = parse_server_addr(raw_ws_server)
+                if not ws_server:
+                    self._send_response(400, "ws_server 不是有效的 IP 或域名")
                     return
 
             vless_text = load_vless_text()
@@ -191,7 +211,14 @@ class RequestHandler(BaseHTTPRequestHandler):
 
             try:
                 sub_name = load_sub_name()
-                config = convert.build_clash_config(vless_text, sub_name, xray_supports_mlkem(), node_ip, node_port)
+                config = convert.build_clash_config(
+                    vless_text,
+                    sub_name,
+                    xray_supports_mlkem(),
+                    reality_server,
+                    reality_port,
+                    ws_server,
+                )
                 # Clash 客户端从 Content-Disposition 读取订阅名称（缺失时会用 URL 路径 "sub"）
                 # 使用 RFC 5987 编码以支持中文
                 headers = {
