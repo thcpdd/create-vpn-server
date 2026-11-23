@@ -235,7 +235,7 @@ def generate_config(nodes: list, group_name: str = DEFAULT_GROUP_NAME, support_m
 
 def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bool = False,
                        reality_server: str = None, reality_port: int = None,
-                       ws_server: str = None) -> str:
+                       ws_server: str = None, ws_port: int = None) -> str:
     """一站式转换：从 VLESS 文本直接生成 Clash YAML 配置
 
     vless_text: 包含 VLESS 链接的原始文本（可含多条）
@@ -244,6 +244,7 @@ def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bo
     reality_server: 替换 Reality 节点的 server 地址（IP 或域名，用于中转场景）
     reality_port:   替换 Reality 节点的端口（中转服务器监听端口与本机不同时使用）
     ws_server:      替换 WS 节点的 server 地址（优选 IP 或域名，保留原 SNI 与 Host）
+    ws_port:        替换 WS 节点的端口（配合优选 IP 或域名使用不同端口时使用）
     """
     links = extract_vless_links(vless_text)
     if not links:
@@ -260,6 +261,8 @@ def build_clash_config(vless_text: str, sub_name: str = "VPN", support_mlkem: bo
         elif node["network"] == "ws":
             if ws_server:
                 node["server"] = ws_server
+            if ws_port:
+                node["port"] = ws_port
         nodes.append(node)
 
     group_name = sub_name

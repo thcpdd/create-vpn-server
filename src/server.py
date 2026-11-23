@@ -204,6 +204,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self._send_response(400, "ws_server 不是有效的 IP 或域名")
                     return
 
+            ws_port = None
+            raw_ws_port = params.get("ws_port", [""])[0]
+            if raw_ws_port:
+                ws_port = parse_port(raw_ws_port)
+                if not ws_port:
+                    self._send_response(400, "ws_port 不是有效的端口（1-65535）")
+                    return
+
             vless_text = load_vless_text()
             if not vless_text:
                 self._send_response(500, "VLESS 链接文件不存在，请先运行 setup.sh")
@@ -218,6 +226,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     reality_server,
                     reality_port,
                     ws_server,
+                    ws_port,
                 )
                 # Clash 客户端从 Content-Disposition 读取订阅名称（缺失时会用 URL 路径 "sub"）
                 # 使用 RFC 5987 编码以支持中文

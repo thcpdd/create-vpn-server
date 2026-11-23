@@ -143,7 +143,7 @@ VLESS-Reality is ideal for direct connections, but if your VPS IP is prone to bl
 | Endpoint | Description |
 |----------|-------------|
 | `GET /sub?token=<token>` | Returns the Clash YAML config |
-| `GET /sub?token=<token>&reality_server=<addr>&reality_port=<port>&ws_server=<addr>` | Same as above, with per-node endpoint overrides (all optional and composable):<br>- `reality_server` / `reality_port`: override `server` / `port` of Reality nodes (IPv4/IPv6 or domain), for connecting through a relay server<br>- `ws_server`: override `server` of WS-TLS nodes (preferred IP or domain, keeping the original `servername` and `Host`), for CDN preferred endpoints |
+| `GET /sub?token=<token>&reality_server=<addr>&reality_port=<port>&ws_server=<addr>&ws_port=<port>` | Same as above, with per-node endpoint overrides (all optional and composable):<br>- `reality_server` / `reality_port`: override `server` / `port` of Reality nodes (IPv4/IPv6 or domain), for connecting through a relay server<br>- `ws_server` / `ws_port`: override `server` / `port` of WS-TLS nodes (preferred IP or domain, keeping the original `servername` and `Host`), for CDN preferred endpoints |
 | `GET /version` | Health check |
 
 ## Traffic Info Header
